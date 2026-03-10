@@ -1,16 +1,31 @@
 const express = require('express');
 const cors = require('cors');
+const db = require('./config/db'); 
+
+const clientsRoute = require('./routes/clients');
 
 const app = express();
 
 app.use(cors());
 app.use(express.json()); 
 
-app.get('/api/v1', (req, res) => {
-    res.json({ message: "¡Welcome to Gigmanager API!" });
+app.use('/api/v1/clients', clientsRoute);
+
+app.get('/api/v1', async (req, res) => {
+    try {
+        const [rows] = await db.query('SELECT 1 + 1 AS solution');
+        res.json({ 
+            message: "Welcome to the GigManager API!",
+            database_status: "Connected",
+            test_query_result: rows[0].solution
+        });
+    } catch (error) {
+        console.error("API Error:", error);
+        res.status(500).json({ error: "Database connection failed." });
+    }
 });
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+    console.log(`🚀 GigManager Server running on http://localhost:${PORT}`);
 });
