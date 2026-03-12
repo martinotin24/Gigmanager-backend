@@ -2,62 +2,88 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db'); 
 
-// 1. GET: Detalles con JOIN
-router.get('/details', async (req, res) => {
+// GET
+router.get('/details/:id', async (req, res) => {
     try {
+        const invoiceId = req.params.id;
+        const { user_id } = req.query; 
+
+        if (!user_id) return res.status(400).json({ error: "user_id is required" });
+
         const query = `
             SELECT 
-                i.id AS invoice_id,
-                i.invoice_number,
-                i.total_amount,
-                i.due_date,
-                i.status AS invoice_status,
-                g.title AS gig_title,
-                c.first_name AS client_name,
-                c.last_name AS client_last_name
+                i.invoice_number, i.total_amount, i.status,
+                c.first_name, c.last_name, 
+                a.street, a.city, a.postal_code
             FROM invoices i
             JOIN gigs g ON i.gig_id = g.id
             JOIN clients c ON g.client_id = c.id
-            ORDER BY i.due_date DESC
+            JOIN addresses a ON c.address_id = a.id
+            WHERE i.id = ? AND g.user_id = ?
         `;
-        const [details] = await db.query(query);
-        res.json(details);
+        const [rows] = await db.query(query, [invoiceId, user_id]);
+        
+        if (rows.length === 0) return res.status(403).json({ error: "Unauthorized or Invoice not found" });
+        
+        res.json(rows[0]);
     } catch (error) {
-        console.error("Error fetching invoice details:", error);
-        res.status(500).json({ error: "Failed to fetch invoices" });
+        console.error(error);
+        res.status(500).json({ error: "Error al obtener detalle de factura" });
     }
 });
 
-// 2. POST: Crear factura (Ajustado a tus columnas)
+// POST
 router.post('/', async (req, res) => {
     try {
-        const { gig_id, quote_id, invoice_number, issued_date, due_date, total_amount, status } = req.body;
-        
-        const [result] = await db.query(
-            'INSERT INTO invoices (gig_id, quote_id, invoice_number, issued_date, due_date, total_amount, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [gig_id, quote_id, invoice_number, issued_date, due_date, total_amount, status]
+        const { user_id, gig_id, quote_id, invoice_number, issued_date, due_date, total_amount, status } = req.body;
+
+        const [gigCheck] = await db.query(
+            'SELECT id FROM gigs WHERE id = ? AND user_id = ?',
+            [gig_id, user_id]
         );
 
-        res.status(201).json({ 
-            message: "Invoice created successfully!", 
-            invoiceId: result.insertId 
-        });
+        if (gigCheck.length === 0) {
+            return res.status(403).json({ error: "Unauthorized: Cannot invoice a gig you don't own." });
+        }
+
+        const query = `
+            INSERT INTO invoices (gig_id, quote_id, invoice_number, issued_date, due_date, total_amount, status) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        `;
+        const [result] = await db.query(query, [
+            gig_id, 
+            quote_id || null, 
+            invoice_number, 
+            issued_date, 
+            due_date, 
+            total_amount, 
+            status
+        ]);
+
+        res.status(201).json({ message: "Invoice created successfully!", invoiceId: result.insertId });
     } catch (error) {
         console.error("Error creating invoice:", error);
         res.status(500).json({ error: "Failed to create invoice" });
     }
 });
 
-// 3. PATCH: Actualizar factura
+// PATCH
 router.patch('/:id', async (req, res) => {
     try {
         const invoiceId = req.params.id;
-        const [existing] = await db.query('SELECT * FROM invoices WHERE id = ?', [invoiceId]);
+        const { user_id, invoice_number, total_amount, due_date, status } = req.body;
 
-        if (existing.length === 0) return res.status(404).json({ error: "Invoice not found" });
+        const checkQuery = `
+            SELECT i.id FROM invoices i 
+            JOIN gigs g ON i.gig_id = g.id 
+            WHERE i.id = ? AND g.user_id = ?
+        `;
+        const [existing] = await db.query(checkQuery, [invoiceId, user_id]);
 
-        const inv = existing[0];
-        const { invoice_number, total_amount, due_date, status } = req.body;
+        if (existing.length === 0) return res.status(403).json({ error: "Unauthorized or Invoice not found" });
+
+        const [invData] = await db.query('SELECT * FROM invoices WHERE id = ?', [invoiceId]);
+        const inv = invData[0];
 
         const newNum = invoice_number ?? inv.invoice_number;
         const newAmount = total_amount ?? inv.total_amount;
@@ -71,20 +97,28 @@ router.patch('/:id', async (req, res) => {
 
         res.json({ message: "Invoice updated successfully!" });
     } catch (error) {
-        console.error("Error updating invoice:", error);
         res.status(500).json({ error: "Failed to update invoice" });
     }
 });
 
-// 4. DELETE
+// DELETE
 router.delete('/:id', async (req, res) => {
     try {
         const invoiceId = req.params.id;
-        const [result] = await db.query('DELETE FROM invoices WHERE id = ?', [invoiceId]);
-        if (result.affectedRows === 0) return res.status(404).json({ error: "Invoice not found" });
+        const { user_id } = req.body;
+
+        const checkQuery = `
+            SELECT i.id FROM invoices i 
+            JOIN gigs g ON i.gig_id = g.id 
+            WHERE i.id = ? AND g.user_id = ?
+        `;
+        const [resultCheck] = await db.query(checkQuery, [invoiceId, user_id]);
+
+        if (resultCheck.length === 0) return res.status(403).json({ error: "Unauthorized or Invoice not found" });
+
+        await db.query('DELETE FROM invoices WHERE id = ?', [invoiceId]);
         res.json({ message: "Invoice deleted successfully!" });
     } catch (error) {
-        console.error("Error deleting invoice:", error);
         res.status(500).json({ error: "Failed to delete invoice" });
     }
 });
