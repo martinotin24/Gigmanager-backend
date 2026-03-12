@@ -3,13 +3,31 @@ const router = express.Router();
 const db = require('../config/db'); 
 
 // 1. READ: Obtener todos los trabajos (Gigs)
-router.get('/', async (req, res) => {
+router.get('/details', async (req, res) => {
     try {
-        const [gigs] = await db.query('SELECT * FROM gigs');
-        res.json(gigs);
+        const query = `
+            SELECT 
+                g.id AS gig_id,
+                g.title,
+                g.description,
+                g.gig_date,
+                g.venue,
+                g.fee,
+                g.status,
+                c.first_name AS client_name,
+                c.last_name AS client_last_name,
+                c.phone AS client_phone,
+                c.email AS client_email
+            FROM gigs g
+            JOIN clients c ON g.client_id = c.id
+            ORDER BY g.gig_date ASC
+        `;
+        
+        const [details] = await db.query(query);
+        res.json(details);
     } catch (error) {
-        console.error("Error fetching gigs:", error);
-        res.status(500).json({ error: "Failed to get gigs" });
+        console.error("Error fetching gig details:", error);
+        res.status(500).json({ error: "Failed to get detailed gigs" });
     }
 });
 

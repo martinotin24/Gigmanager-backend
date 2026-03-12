@@ -5,6 +5,7 @@ const db = require('./config/db');
 const clientsRoute = require('./routes/clients');
 const gigRoutes = require('./routes/gigs');
 const quoteRoutes = require('./routes/quotes');
+const invoiceRoutes = require('./routes/invoices');
 
 const app = express();
 
@@ -14,6 +15,7 @@ app.use(express.json());
 app.use('/api/v1/clients', clientsRoute);
 app.use('/api/v1/gigs', gigRoutes);
 app.use('/api/v1/quotes', quoteRoutes);
+app.use('/api/v1/invoices', invoiceRoutes);
 
 app.get('/api/v1', async (req, res) => {
     try {

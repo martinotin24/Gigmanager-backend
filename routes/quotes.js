@@ -3,13 +3,28 @@ const router = express.Router();
 const db = require('../config/db'); 
 
 // 1. GET
-router.get('/', async (req, res) => {
+router.get('/details', async (req, res) => {
     try {
-        const [quotes] = await db.query('SELECT * FROM quotes');
-        res.json(quotes);
+        const query = `
+            SELECT 
+                q.id AS quote_id,
+                q.quote_number,
+                q.total_amount,
+                q.status AS quote_status,
+                g.title AS event_title,
+                g.gig_date,
+                c.first_name AS client_name,
+                c.last_name AS client_last_name
+            FROM quotes q
+            JOIN gigs g ON q.gig_id = g.id
+            JOIN clients c ON g.client_id = c.id
+        `;
+        
+        const [details] = await db.query(query);
+        res.json(details);
     } catch (error) {
-        console.error("Error fetching quotes:", error);
-        res.status(500).json({ error: "Failed to get quotes" });
+        console.error("Error fetching quote details:", error);
+        res.status(500).json({ error: "Failed to get detailed quotes" });
     }
 });
 
