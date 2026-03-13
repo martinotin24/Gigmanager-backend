@@ -3,16 +3,28 @@ const router = express.Router();
 const db = require('../config/db'); 
 
 // GET
-router.get('/', async (req, res) => {
+router.get('/details/:id', async (req, res) => {
     try {
-        const { user_id } = req.query; 
-        if (!user_id) return res.status(400).json({ error: "user_id is required" });
+        const clientId = req.params.id;
+        const { user_id } = req.query;
 
-        const [clients] = await db.query('SELECT * FROM clients WHERE user_id = ?', [user_id]);
-        res.json(clients);
+        const query = `
+            SELECT c.*, a.street, a.city, a.province, a.postal_code, a.country
+            FROM clients c
+            LEFT JOIN addresses a ON c.address_id = a.id
+            WHERE c.id = ? AND c.user_id = ?
+        `;
+        
+        const [rows] = await db.query(query, [clientId, user_id]);
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: "Client not found or unauthorized" });
+        }
+
+        res.json(rows[0]);
     } catch (error) {
-        console.error("Error fetching clients:", error);
-        res.status(500).json({ error: "Failed to get clients" });
+        console.error("Error fetching client details:", error);
+        res.status(500).json({ error: "Internal server error" });
     }
 });
 
@@ -45,33 +57,26 @@ router.post('/', async (req, res) => {
 // PATCH
 router.patch('/:id', async (req, res) => {
     try {
+        const { user_id, first_name, last_name, email, phone } = req.body;
         const clientId = req.params.id;
-        const { user_id, first_name, last_name, email, phone, address_id } = req.body;
 
+        const [exists] = await db.query('SELECT * FROM clients WHERE id = ? AND user_id = ?', [clientId, user_id]);
+        if (exists.length === 0) return res.status(403).json({ error: "Unauthorized or client not found" });
+
+        const c = exists[0];
+        const query = `UPDATE clients SET first_name = ?, last_name = ?, email = ?, phone = ? WHERE id = ?`;
         
-        const [existingClient] = await db.query('SELECT * FROM clients WHERE id = ? AND user_id = ?', [clientId, user_id]);
-
-        if (existingClient.length === 0) {
-            return res.status(403).json({ error: "Unauthorized or client not found" });
-        }
-
-        const client = existingClient[0]; 
-
-        const newFirstName = first_name !== undefined ? first_name : client.first_name;
-        const newLastName = last_name !== undefined ? last_name : client.last_name;
-        const newEmail = email !== undefined ? email : client.email;
-        const newPhone = phone !== undefined ? phone : client.phone;
-        const newAddressId = address_id !== undefined ? address_id : client.address_id;
-
-        await db.query(
-            'UPDATE clients SET first_name = ?, last_name = ?, email = ?, phone = ?, address_id = ? WHERE id = ? AND user_id = ?',
-            [newFirstName, newLastName, newEmail, newPhone, newAddressId, clientId, user_id]
-        );
+        await db.query(query, [
+            first_name ?? c.first_name, 
+            last_name ?? c.last_name, 
+            email ?? c.email, 
+            phone ?? c.phone, 
+            clientId
+        ]);
 
         res.json({ message: "Client updated successfully!" });
     } catch (error) {
-        console.error("Error updating client:", error);
-        res.status(500).json({ error: "Failed to update client" });
+        res.status(500).json({ error: "Error updating client" });
     }
 });
 

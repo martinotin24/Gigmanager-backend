@@ -50,22 +50,29 @@ router.get('/', async (req, res) => {
 });
 
 // UPDATE
-router.put('/:id', async (req, res) => {
+router.patch('/:id', async (req, res) => {
     try {
         const { user_id, street, city, province, postal_code, country } = req.body;
         const addressId = req.params.id;
 
+        const [exists] = await db.query('SELECT * FROM addresses WHERE id = ? AND user_id = ?', [addressId, user_id]);
+        if (exists.length === 0) return res.status(403).json({ error: "Unauthorized or address not found" });
+
+        const addr = exists[0];
         const query = `
             UPDATE addresses 
             SET street = ?, city = ?, province = ?, postal_code = ?, country = ?
-            WHERE id = ? AND user_id = ?
+            WHERE id = ?
         `;
         
-        const [result] = await db.query(query, [street, city, province, postal_code, country, addressId, user_id]);
-
-        if (result.affectedRows === 0) {
-            return res.status(403).json({ error: "Unauthorized or address not found" });
-        }
+        await db.query(query, [
+            street ?? addr.street, 
+            city ?? addr.city, 
+            province ?? addr.province, 
+            postal_code ?? addr.postal_code, 
+            country ?? addr.country, 
+            addressId
+        ]);
 
         res.json({ message: "Address updated successfully!" });
     } catch (error) {

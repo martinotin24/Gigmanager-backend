@@ -3,27 +3,24 @@ const router = express.Router();
 const db = require('../config/db'); 
 
 // GET
-router.get('/details', async (req, res) => {
+router.get('/details/:id', async (req, res) => {
     try {
+        const quoteId = req.params.id;
         const { user_id } = req.query;
-        if (!user_id) return res.status(400).json({ error: "user_id is required" });
 
         const query = `
-            SELECT 
-                q.id AS quote_id, q.quote_number, q.total_amount, q.status AS quote_status,
-                g.title AS event_title, g.gig_date,
-                c.first_name AS client_name, c.last_name AS client_last_name
+            SELECT q.*, g.title as gig_title, c.first_name, c.last_name
             FROM quotes q
             JOIN gigs g ON q.gig_id = g.id
             JOIN clients c ON g.client_id = c.id
-            WHERE g.user_id = ?
+            WHERE q.id = ? AND g.user_id = ?
         `;
-        
-        const [details] = await db.query(query, [user_id]);
-        res.json(details);
+        const [rows] = await db.query(query, [quoteId, user_id]);
+
+        if (rows.length === 0) return res.status(404).json({ error: "Quote not found" });
+        res.json(rows[0]);
     } catch (error) {
-        console.error("Error fetching quote details:", error);
-        res.status(500).json({ error: "Failed to get detailed quotes" });
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -54,35 +51,18 @@ router.post('/', async (req, res) => {
 // PATCH
 router.patch('/:id', async (req, res) => {
     try {
+        const { user_id, status, total_amount } = req.body;
         const quoteId = req.params.id;
-        const { user_id, quote_number, valid_until, total_amount, status } = req.body;
 
-        const checkQuery = `
-            SELECT q.id FROM quotes q 
-            JOIN gigs g ON q.gig_id = g.id 
-            WHERE q.id = ? AND g.user_id = ?
-        `;
-        const [existing] = await db.query(checkQuery, [quoteId, user_id]);
+        const [exists] = await db.query('SELECT * FROM quotes WHERE id = ? AND user_id = ?', [quoteId, user_id]);
+        if (exists.length === 0) return res.status(403).json({ error: "Unauthorized" });
 
-        if (existing.length === 0) return res.status(403).json({ error: "Unauthorized or Quote not found" });
+        await db.query('UPDATE quotes SET status = ?, total_amount = ? WHERE id = ?', 
+            [status ?? exists[0].status, total_amount ?? exists[0].total_amount, quoteId]);
 
-        const [quoteData] = await db.query('SELECT * FROM quotes WHERE id = ?', [quoteId]);
-        const q = quoteData[0];
-
-        const newNum = quote_number ?? q.quote_number;
-        const newValid = valid_until ?? q.valid_until;
-        const newAmount = total_amount ?? q.total_amount;
-        const newStatus = status ?? q.status;
-
-        await db.query(
-            'UPDATE quotes SET quote_number = ?, valid_until = ?, total_amount = ?, status = ? WHERE id = ?',
-            [newNum, newValid, newAmount, newStatus, quoteId]
-        );
-
-        res.json({ message: "Quote updated successfully!" });
+        res.json({ message: "Quote updated!" });
     } catch (error) {
-        console.error("Error updating quote:", error);
-        res.status(500).json({ error: "Failed to update quote" });
+        res.status(500).json({ error: "Error" });
     }
 });
 
